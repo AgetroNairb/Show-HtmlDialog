@@ -4,7 +4,7 @@ function Show-HtmlDialog {
             For displaying an HTML formatted message in a dialog box.
     
         .DESCRIPTION
-            Patterned off the dialogs in the PowerShell App Deployment Toolkit but uses WPF and HTML for scaling on high-DPI systems.
+            Patterned off the dialogs in the PowerShell App Deployment Toolkit (http://psappdeploytoolkit.com/) but uses WPF and HTML for scaling on high-DPI systems.    
     
         .PARAMETER Message
             HTML to be displayed in the dialog. Mandatory.
@@ -50,34 +50,16 @@ function Show-HtmlDialog {
             System.Boolean.False if the X in the title bar is clicked in a default dialog
 
         .EXAMPLE
-            PS C:\>Show-HtmlDialog -Message "<p>Please remove the USB flash drive from the system.</p><br /><p>Click the X button to close this dialog.</p>"
-
             Shows dialog with the only mandatory parameter, Message. The icon in the title bar will be PowerShell's and the dialog will need to be closed with the X button in the title bar.
+            Show-HtmlDialog -Message "<p>Please remove the USB flash drive from the system.</p><br /><p>Click the X button to close this dialog.</p>"
     
         .EXAMPLE
-            PS C:\>Show-HtmlDialog -Title "Windows 10 Deployment" -Icon  ".\PreflightIcon.ico" -Banner  ".\PreflightBanner.png" -SystemIcon "Information" -Timeout 15 -Message "<p>Please remove the USB flash drive from the system.</p><br /><p>This dialog will timeout after 15 seconds and the Windows 10 deployment will continue.</p>"
-            
             Shows the dialog with some extra, optional parameters specified, including Timeout.
+            Show-HtmlDialog -Title "Windows 10 Deployment" -Icon  ".\PreflightIcon.ico" -Banner  ".\PreflightBanner.png" -SystemIcon "Information" -Timeout 15 -Message "<p>Please remove the USB flash drive from the system.</p><br /><p>This dialog will timeout after 15 seconds and the Windows 10 deployment will continue.</p>"
     
         .EXAMPLE
-            PS C:\>Show-HtmlDialog -Title "Windows 10 Deployment" -Icon  ".\PreflightIcon.ico" -Banner  ".\PreflightBanner.png" -SystemIcon "Error" -OkButton -Message "<p>You have not selected UEFI boot.</p><p>UEFI boot is required to deploy Windows 10.</p><p><b>Please restart the computer and enable UEFI boot before starting the deployment.</b></p>"
-            
             Shows the dialog with some extra, optional parameters specified, including OkButton.
-
-        .EXAMPLE
-            PS C:\>Show-HtmlDialog -Progress -Message "<div align='center'><p>Downloading and applying the Windows 10 image.</p><p><i>Please wait...</i></p></div>"
-            PS C:\>Show-HtmlDialog -CloseProgress
-
-            Shows the dialog in a runspace, returning focus back to the calling script. The CloseProgress paramter is used to close the progress when desired.
-
-        .EXAMPLE
-            PS C:\>Show-HtmlProgress -Message "<div align='center'><p>Downloading and applying the Windows 10 image.</p><p><i>Please wait...</i></p></div>" -Icon  ".\PreflightIcon.ico" -Banner  ".\PreflightBanner.png" -SystemIcon "Information" -NoSound -NoClose
-            PS C:\>Close-HtmlProgress
-
-            Shows the function included to simplify access to the progress dialog.
-            
-        .LINK
-            http://psappdeploytoolkit.com/
+            Show-HtmlDialog -Title "Windows 10 Deployment" -Icon  ".\PreflightIcon.ico" -Banner  ".\PreflightBanner.png" -SystemIcon "Error" -OkButton -Message "<p>You have not selected UEFI boot.</p><p>UEFI boot is required to deploy Windows 10.</p><p><b>Please restart the computer and enable UEFI boot before starting the deployment.</b></p>"
     #>
     [CmdletBinding()]
     param(
@@ -209,9 +191,23 @@ function Show-HtmlDialog {
             $IconPath = (Get-ChildItem -Path $Icon).FullName
             $BannerPath = (Get-ChildItem -Path $Banner).FullName
             
-            $AppliedDPI = (Get-ItemProperty "HKCU:\Control Panel\Desktop\WindowMetrics" -Name "AppliedDPI").AppliedDPI
+            if ($env:USERNAME -eq "$env:COMPUTERNAME`$") {
+                $ExplorerProcess = Get-WmiObject win32_process -Filter "Name = 'explorer.exe'" | select -First 1
+                $UserDomain = $ExplorerProcess.GetOwner().Domain
+                $UserName = $ExplorerProcess.GetOwner().User
+                $UserSid = (New-Object System.Security.Principal.NTAccount($UserDomain, $UserName)).Translate([System.Security.Principal.SecurityIdentifier]).Value
+                $AppliedDPIPath = "HKU:\$UserSid\Control Panel\Desktop\WindowMetrics"
+                New-PSDrive -PSProvider Registry -Name HKU -Root HKEY_USERS -ErrorAction SilentlyContinue | Out-Null
+            }
+            else {
+                $AppliedDPIPath = "HKCU:\Control Panel\Desktop\WindowMetrics"
+            }
+            $AppliedDPI = (Get-ItemProperty $AppliedDPIPath -Name "AppliedDPI" -ErrorAction SilentlyContinue).AppliedDPI
+            if ([string]::IsNullOrWhiteSpace($AppliedDPI)) {
+                $AppliedDPI = 96
+            }
             $DpiPercentage = $AppliedDPI / 96
-
+            
             $script:SynchronizedHashtable = [hashtable]::Synchronized(@{}) # for passing variables to and from runspace; script variable for closing progress dialog
             $script:SynchronizedHashtable.Message = $Message
             $script:SynchronizedHashtable.Title = $Title
@@ -636,10 +632,10 @@ function Show-HtmlProgress {
             "Title" = $Title
         }
         if ($Icon) { $Splat.Add("Icon", $Icon) }
-        if ($Icon) { $Splat.Add("Banner", $Banner) }
-        if ($Icon) { $Splat.Add("SystemIcon", $SystemIcon) }
-        if ($Icon) { $Splat.Add("NoSound", $NoSound) }
-        if ($Icon) { $Splat.Add("NoClose", $NoClose) }
+        if ($Banner) { $Splat.Add("Banner", $Banner) }
+        if ($SystemIcon) { $Splat.Add("SystemIcon", $SystemIcon) }
+        if ($NoSound) { $Splat.Add("NoSound", $NoSound) }
+        if ($NoClose) { $Splat.Add("NoClose", $NoClose) }
         
         Show-HtmlDialog @Splat    
     }
